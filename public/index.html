@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDF Co-Viewer</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #121212;
+      color: #f0f0f0;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      text-align: center;
+    }
+
+    h1 {
+      color: #ffffff;
+      margin-bottom: 20px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 800px;
+      padding: 20px;
+      background: #1e1e1e;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5);
+    }
+
+    .button {
+      padding: 12px 24px;
+      margin: 10px;
+      background-color: #6200ea;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+
+    .button:hover {
+      background-color: #3700b3;
+    }
+
+    #upload-section {
+      display: none;
+      margin-top: 20px;
+    }
+
+    input[type="file"],
+    input[type="text"] {
+      padding: 10px;
+      margin-top: 10px;
+      background-color: #333333;
+      color: #f0f0f0;
+      border: 1px solid #444;
+      border-radius: 5px;
+      width: 100%;
+    }
+
+    input[type="file"]:hover,
+    input[type="text"]:hover {
+      border-color: #6200ea;
+    }
+
+    iframe {
+      width: 100%;
+      height: 500px;
+      border: none;
+      margin-top: 20px;
+      display: none;
+    }
+
+    p {
+      font-size: 18px;
+    }
+
+    .role-selection {
+      margin-top: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .toggle-container {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px;
+    }
+
+    .toggle {
+      position: relative;
+      display: inline-block;
+      width: 60px;
+      height: 34px;
+    }
+
+    .toggle input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: .4s;
+      border-radius: 34px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 26px;
+      width: 26px;
+      border-radius: 50%;
+      left: 4px;
+      bottom: 4px;
+      background-color: white;
+      transition: .4s;
+    }
+
+    input:checked + .slider {
+      background-color: #6200ea;
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(26px);
+    }
+
+    .role-text {
+      margin-left: 10px;
+      font-size: 18px;
+      color: #fff;
+    }
+
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>PDF Co-Viewer</h1>
+    <p>Choose your role:</p>
+    
+    <div class="role-selection">
+      <div class="toggle-container">
+        <label class="toggle">
+          <input type="checkbox" id="role-toggle">
+          <span class="slider"></span>
+        </label>
+        <span class="role-text" id="role-text">Viewer</span>
+      </div>
+    </div>
+
+    <div id="upload-section">
+      <h2>Upload or Enter PDF URL</h2>
+      <input type="file" id="pdf-file" />
+      <br><br>
+      <input type="text" id="pdf-url" placeholder="Or paste a PDF URL" />
+      <br><br>
+      <button class="button" id="load-pdf-btn">Load PDF</button>
+    </div>
+
+    <iframe id="pdf-viewer"></iframe>
+  </div>
+
+  <script>
+    const ws = new WebSocket('ws://localhost:8080');
+    let role = null;
+
+    // Select elements
+    const roleToggle = document.getElementById('role-toggle');
+    const roleText = document.getElementById('role-text');
+    const uploadSection = document.getElementById('upload-section');
+    const loadPdfBtn = document.getElementById('load-pdf-btn');
+    const pdfViewer = document.getElementById('pdf-viewer');
+    const pdfFileInput = document.getElementById('pdf-file');
+    const pdfUrlInput = document.getElementById('pdf-url');
+
+    // WebSocket message handler
+    ws.onopen = () => {
+      console.log('Connected to the server');
+    };
+
+    ws.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      if (message.type === 'status') {
+        if (message.role === 'presenter') {
+          role = 'presenter';
+          uploadSection.style.display = 'block';
+        } else if (message.role === 'viewer') {
+          role = 'viewer';
+        }
+      } else if (message.type === 'pdfUrl') {
+        pdfViewer.src = message.url;
+        pdfViewer.style.display = 'block';
+      }
+    };
+
+    // Toggle role between Presenter and Viewer
+    roleToggle.addEventListener('change', () => {
+      if (roleToggle.checked) {
+        roleText.textContent = 'Presenter';
+        ws.send(JSON.stringify({ type: 'setPresenter' }));
+      } else {
+        roleText.textContent = 'Viewer';
+        ws.send(JSON.stringify({ type: 'setViewer' }));
+      }
+    });
+
+    // Handle PDF URL or File Upload
+    loadPdfBtn.addEventListener('click', () => {
+      let url = pdfUrlInput.value.trim();
+      if (!url && pdfFileInput.files.length > 0) {
+        const file = pdfFileInput.files[0];
+        const reader = new FileReader();
+        reader.onload = () => {
+          url = reader.result;
+          ws.send(JSON.stringify({ type: 'pdfUrl', url }));
+        };
+        reader.readAsDataURL(file);
+      } else if (url) {
+        ws.send(JSON.stringify({ type: 'pdfUrl', url }));
+      } else {
+        alert('Please provide a PDF URL or upload a file');
+      }
+    });
+  </script>
+</body>
+</html>
